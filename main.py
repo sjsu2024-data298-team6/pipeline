@@ -1,3 +1,4 @@
+import ast
 import boto3
 import time
 import os
@@ -5,9 +6,11 @@ from roboflow import Roboflow
 import torchvision.transforms as transforms
 from PIL import Image
 import torch
+import pathlib
 from pathlib import Path
 import shutil
 from dotenv import load_dotenv
+import yaml
 
 # Load environment variables from .env file
 load_dotenv()
@@ -34,19 +37,23 @@ def process_image(image_path):
     """Applies torchvision transformations to an image and saves it."""
     image = Image.open(image_path).convert("RGB")
     transformed_image = transform(image)
-    save_path = str(image_path).replace(".jpg", "_transformed.jpg")  # Adjust as needed
+    assert isinstance(image_path, pathlib.PosixPath)
+    save_path = image_path.with_name(
+        f"{image_path.stem}_transformed{image_path.suffix}"
+    )
     transformed_image_pil = transforms.ToPILImage()(transformed_image)
     transformed_image_pil.save(save_path)
     return save_path
 
 
-def download_dataset_from_roboflow():
-    """Downloads the dataset from Roboflow and returns the path of the downloaded directory."""
+def download_dataset_from_roboflow(url):
+    parts = url.split("/")
+    ds_version = parts[-1]
+    ds_project = parts[-3]
+    ds_workspace = parts[-4]
     rf = Roboflow(api_key=ROBOFLOW_KEY)
-    project = rf.workspace("drone-obstacle-detection").project(
-        "drone-object-detection-yhpn6"
-    )
-    version = project.version(15)
+    project = rf.workspace(ds_workspace).project(ds_project)
+    version = project.version(ds_version)
     dataset = version.download("yolov11")
     return Path(dataset.location)
 
@@ -61,29 +68,57 @@ def upload_to_s3(local_path, s3_path):
             print(f"Uploaded {file_path} to s3://{S3_BUCKET_NAME}/{s3_key}")
 
 
-def process_and_upload_dataset():
+def process_and_upload_dataset(url):
     """Main function that downloads, processes, and uploads dataset to S3."""
     # Download dataset
-    dataset_dir = download_dataset_from_roboflow()
-    print("Downloaded dataset from Roboflow.")
+    dataset_dir = download_dataset_from_roboflow(url)
 
-    # Process each image in train, valid, test folders
-    for folder in ["train", "valid", "test"]:
-        folder_path = dataset_dir / folder
-        transformed_folder_path = dataset_dir / f"{folder}_transformed"
-        transformed_folder_path.mkdir(exist_ok=True)
-
-        for image_path in folder_path.glob(
-            "*.jpg"
-        ):  # Assuming .jpg files; adjust as needed
-            transformed_image_path = process_image(image_path)
-            shutil.move(
-                transformed_image_path,
-                transformed_folder_path / Path(transformed_image_path).name,
-            )
+    # # Process each image in train, valid, test folders
+    # for folder in ["train", "valid", "test"]:
+    #     folder_path = dataset_dir / folder
+    #     images_dir = folder_path / "images"
+    #     labels_dir = folder_path / "labels"
+    #
+    #     transformed_folder_path = dataset_dir / f"{folder}_transformed"
+    #     transformed_folder_path.mkdir(exist_ok=True)
+    #
+    #     transformed_images_dir = transformed_folder_path / "images"
+    #     transformed_labels_dir = transformed_folder_path / "labels"
+    #
+    #     transformed_images_dir.mkdir(exist_ok=True)
+    #     transformed_labels_dir.mkdir(exist_ok=True)
+    #
+    #     image_paths = [
+    #         f
+    #         for f in os.listdir(images_dir)
+    #         if f.lower().endswith(
+    #             (
+    #                 ".jpg",
+    #                 ".jpeg",
+    #                 ".png",
+    #                 ".ppm",
+    #                 ".bmp",
+    #                 ".pgm",
+    #                 ".tif",
+    #                 ".tiff",
+    #                 ".webp",
+    #             )
+    #         )
+    #     ]
+    #
+    #     for image_path in image_paths:
+    #         transformed_image_path = process_image(images_dir / image_path)
+    #         shutil.move(
+    #             transformed_image_path,
+    #             transformed_images_dir / Path(transformed_image_path).name,
+    #         )
+    #         shutil.move(
+    #             labels_dir / f"{Path(image_path).stem}.txt",
+    #             transformed_labels_dir / f"{Path(transformed_image_path).stem}.txt",
+    #         )
 
     # Upload processed dataset to S3
-    upload_to_s3(dataset_dir, "processed_dataset")
+    upload_to_s3(dataset_dir, "dataset")
 
 
 def listen_to_sqs():
@@ -98,10 +133,11 @@ def listen_to_sqs():
         if "Messages" in response:
             message = response["Messages"][0]
             receipt_handle = message["ReceiptHandle"]
+            body = ast.literal_eval(message["Body"])
 
             try:
                 # Process the dataset
-                process_and_upload_dataset()
+                process_and_upload_dataset(body["roboflow_url"])
 
                 # Delete message after successful processing
                 sqs.delete_message(QueueUrl=SQS_QUEUE_URL, ReceiptHandle=receipt_handle)
