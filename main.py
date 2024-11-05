@@ -6,6 +6,7 @@ from roboflow import Roboflow
 import torchvision.transforms as transforms
 from PIL import Image
 import torch
+import zipfile
 import pathlib
 from pathlib import Path
 import shutil
@@ -58,14 +59,21 @@ def download_dataset_from_roboflow(url):
     return Path(dataset.location)
 
 
-def upload_to_s3(local_path, s3_path):
-    """Uploads files in a directory to S3."""
-    for root, dirs, files in os.walk(local_path):
-        for file in files:
-            file_path = os.path.join(root, file)
-            s3_key = os.path.join(s3_path, os.path.relpath(file_path, local_path))
-            s3.upload_file(file_path, S3_BUCKET_NAME, s3_key)
-            print(f"Uploaded {file_path} to s3://{S3_BUCKET_NAME}/{s3_key}")
+def upload_to_s3(local_path, s3_path, zip_name="upload.zip"):
+    zip_path = os.path.join("/tmp", zip_name)  # Temporary path for the zip file
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zipf:
+        for root, _, files in os.walk(local_path):
+            for file in files:
+                file_path = os.path.join(root, file)
+                zipf.write(file_path, os.path.relpath(file_path, local_path))
+    print(f"Zipped {local_path} to {zip_path}")
+
+    # Define the S3 key for the zip file
+    s3_key = os.path.join(s3_path, zip_name)
+
+    # Upload the zip file to S3
+    s3.upload_file(zip_path, S3_BUCKET_NAME, s3_key)
+    print(f"Uploaded {zip_path} to s3://{S3_BUCKET_NAME}/{s3_key}")
 
 
 def process_and_upload_dataset(url):
