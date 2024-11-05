@@ -1,31 +1,31 @@
+from PIL import Image
+from dotenv import load_dotenv
+from pathlib import Path
+from roboflow import Roboflow
 import ast
 import boto3
-import time
 import os
-from roboflow import Roboflow
-import torchvision.transforms as transforms
-from PIL import Image
-import torch
-import zipfile
 import pathlib
-from pathlib import Path
 import shutil
-from dotenv import load_dotenv
+import time
+import torch
+import torchvision.transforms as transforms
 import yaml
+import zipfile
 
-# Load environment variables from .env file
+# ---------------
+
 load_dotenv()
 
-# Set up SQS and S3 clients
 sqs = boto3.client("sqs", region_name="us-east-1")
 s3 = boto3.client("s3")
 
-# Environment variables (set these before running the script or hard-code them here)
-ROBOFLOW_KEY = os.getenv("ROBOFLOW_KEY")  # Your Roboflow API key
-SQS_QUEUE_URL = os.getenv("SQS_QUEUE_URL")  # The URL of the SQS queue
-S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME")  # The name of the S3 bucket
+ROBOFLOW_KEY = os.getenv("ROBOFLOW_KEY")
+SQS_QUEUE_URL = os.getenv("SQS_QUEUE_URL")
+S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME")
 
-# Torchvision transformation pipeline
+# ---------------
+
 transform = transforms.Compose(
     [
         transforms.Resize((224, 224)),
@@ -35,7 +35,6 @@ transform = transforms.Compose(
 
 
 def process_image(image_path):
-    """Applies torchvision transformations to an image and saves it."""
     image = Image.open(image_path).convert("RGB")
     transformed_image = transform(image)
     assert isinstance(image_path, pathlib.PosixPath)
@@ -68,17 +67,13 @@ def upload_to_s3(local_path, s3_path, zip_name="upload.zip"):
                 zipf.write(file_path, os.path.relpath(file_path, local_path))
     print(f"Zipped {local_path} to {zip_path}")
 
-    # Define the S3 key for the zip file
     s3_key = os.path.join(s3_path, zip_name)
 
-    # Upload the zip file to S3
     s3.upload_file(zip_path, S3_BUCKET_NAME, s3_key)
     print(f"Uploaded {zip_path} to s3://{S3_BUCKET_NAME}/{s3_key}")
 
 
 def process_and_upload_dataset(url):
-    """Main function that downloads, processes, and uploads dataset to S3."""
-    # Download dataset
     dataset_dir = download_dataset_from_roboflow(url)
 
     # # Process each image in train, valid, test folders
@@ -130,12 +125,11 @@ def process_and_upload_dataset(url):
 
 
 def listen_to_sqs():
-    """Listens to the SQS queue for messages containing the Roboflow URL."""
     while True:
         response = sqs.receive_message(
             QueueUrl=SQS_QUEUE_URL,
             MaxNumberOfMessages=1,
-            WaitTimeSeconds=10,  # Long polling
+            WaitTimeSeconds=10,
         )
 
         if "Messages" in response:
