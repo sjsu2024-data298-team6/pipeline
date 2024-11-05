@@ -23,30 +23,22 @@ s3 = boto3.client("s3")
 ROBOFLOW_KEY = os.getenv("ROBOFLOW_KEY")
 SQS_QUEUE_URL = os.getenv("SQS_QUEUE_URL")
 S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME")
+DEPLOYMENT = os.getenv("DEPLOYMENT")
+
+TYPE_ROBOFLOW = ("roboflow",)
+TYPE_ZIPFILE = "zipfile"
+input_types = {TYPE_ROBOFLOW, TYPE_ZIPFILE}
+
+ROBOFLOW_YOLOV11 = "yolov11"
+ROBOFLOW_YOLOV8 = "yolov8"
+ROBOFLOW_DETECTRON = "coco"
+
+ROBOFLOW_SUPPORTED_DATASETS = {ROBOFLOW_YOLOV11, ROBOFLOW_YOLOV8, ROBOFLOW_DETECTRON}
 
 # ---------------
 
-transform = transforms.Compose(
-    [
-        transforms.Resize((224, 224)),
-        transforms.ToTensor(),
-    ],
-)
 
-
-def process_image(image_path):
-    image = Image.open(image_path).convert("RGB")
-    transformed_image = transform(image)
-    assert isinstance(image_path, pathlib.PosixPath)
-    save_path = image_path.with_name(
-        f"{image_path.stem}_transformed{image_path.suffix}"
-    )
-    transformed_image_pil = transforms.ToPILImage()(transformed_image)
-    transformed_image_pil.save(save_path)
-    return save_path
-
-
-def download_dataset_from_roboflow(url):
+def download_dataset_from_roboflow(url, dl_format):
     parts = url.split("/")
     ds_version = parts[-1]
     ds_project = parts[-3]
@@ -54,11 +46,14 @@ def download_dataset_from_roboflow(url):
     rf = Roboflow(api_key=ROBOFLOW_KEY)
     project = rf.workspace(ds_workspace).project(ds_project)
     version = project.version(ds_version)
-    dataset = version.download("yolov11")
+    dataset = version.download(dl_format, location=f"./{dl_format}", overwrite=True)
     return Path(dataset.location)
 
 
 def upload_to_s3(local_path, s3_path, zip_name="upload.zip"):
+    if DEPLOYMENT == "dev":
+        print("Not uploading in dev env")
+        return
     zip_path = os.path.join("/tmp", zip_name)  # Temporary path for the zip file
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zipf:
         for root, _, files in os.walk(local_path):
@@ -73,55 +68,18 @@ def upload_to_s3(local_path, s3_path, zip_name="upload.zip"):
     print(f"Uploaded {zip_path} to s3://{S3_BUCKET_NAME}/{s3_key}")
 
 
-def process_and_upload_dataset(url):
-    dataset_dir = download_dataset_from_roboflow(url)
+def process_and_upload_dataset(url, dtype):
+    if dtype not in input_types:
+        print(f"{dtype} download type not supported")
 
-    # # Process each image in train, valid, test folders
-    # for folder in ["train", "valid", "test"]:
-    #     folder_path = dataset_dir / folder
-    #     images_dir = folder_path / "images"
-    #     labels_dir = folder_path / "labels"
-    #
-    #     transformed_folder_path = dataset_dir / f"{folder}_transformed"
-    #     transformed_folder_path.mkdir(exist_ok=True)
-    #
-    #     transformed_images_dir = transformed_folder_path / "images"
-    #     transformed_labels_dir = transformed_folder_path / "labels"
-    #
-    #     transformed_images_dir.mkdir(exist_ok=True)
-    #     transformed_labels_dir.mkdir(exist_ok=True)
-    #
-    #     image_paths = [
-    #         f
-    #         for f in os.listdir(images_dir)
-    #         if f.lower().endswith(
-    #             (
-    #                 ".jpg",
-    #                 ".jpeg",
-    #                 ".png",
-    #                 ".ppm",
-    #                 ".bmp",
-    #                 ".pgm",
-    #                 ".tif",
-    #                 ".tiff",
-    #                 ".webp",
-    #             )
-    #         )
-    #     ]
-    #
-    #     for image_path in image_paths:
-    #         transformed_image_path = process_image(images_dir / image_path)
-    #         shutil.move(
-    #             transformed_image_path,
-    #             transformed_images_dir / Path(transformed_image_path).name,
-    #         )
-    #         shutil.move(
-    #             labels_dir / f"{Path(image_path).stem}.txt",
-    #             transformed_labels_dir / f"{Path(transformed_image_path).stem}.txt",
-    #         )
+    if dtype == TYPE_ROBOFLOW:
+        for dl_format in ROBOFLOW_SUPPORTED_DATASETS:
+            dataset_dir = download_dataset_from_roboflow(url, dl_format)
+            upload_to_s3(dataset_dir, "dataset", zip_name=f"{dl_format}.zip")
 
-    # Upload processed dataset to S3
-    upload_to_s3(dataset_dir, "dataset")
+    elif dtype == TYPE_ZIPFILE:
+        print(f"{dtype} support in progress")
+        return
 
 
 def listen_to_sqs():
@@ -139,7 +97,7 @@ def listen_to_sqs():
 
             try:
                 # Process the dataset
-                process_and_upload_dataset(body["roboflow_url"])
+                process_and_upload_dataset(body["roboflow_url"], dtype=TYPE_ROBOFLOW)
 
                 # Delete message after successful processing
                 sqs.delete_message(QueueUrl=SQS_QUEUE_URL, ReceiptHandle=receipt_handle)
@@ -153,4 +111,10 @@ def listen_to_sqs():
 
 
 if __name__ == "__main__":
-    listen_to_sqs()
+    if DEPLOYMENT == "dev":
+        process_and_upload_dataset(
+            "https://universe.roboflow.com/drone-obstacle-detection/drone-object-detection-yhpn6/dataset/73",
+            dtype=TYPE_ROBOFLOW,
+        )
+    else:
+        listen_to_sqs()
