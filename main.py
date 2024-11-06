@@ -1,3 +1,4 @@
+from PIL import Image
 from dotenv import load_dotenv
 from pathlib import Path
 from roboflow import Roboflow
