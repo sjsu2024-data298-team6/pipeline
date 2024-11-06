@@ -1,4 +1,3 @@
-from PIL import Image
 from dotenv import load_dotenv
 from pathlib import Path
 from roboflow import Roboflow
@@ -185,10 +184,13 @@ def listen_to_sqs():
             message = response["Messages"][0]
             receipt_handle = message["ReceiptHandle"]
             body = ast.literal_eval(message["Body"])
+            url = body["url"]
+            dtype = body["dtype"]
+            names = ast.literal_eval(body["names"]) if body["names"] != "none" else None
 
             try:
                 # Process the dataset
-                process_and_upload_dataset(body["roboflow_url"], dtype=TYPE_ROBOFLOW)
+                process_and_upload_dataset(url=url, dtype=dtype, names=names)
 
                 # Delete message after successful processing
                 sqs.delete_message(QueueUrl=SQS_QUEUE_URL, ReceiptHandle=receipt_handle)
