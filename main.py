@@ -5,6 +5,7 @@ from roboflow import Roboflow
 from tqdm import tqdm
 import ast
 import boto3
+import json
 import os
 import pathlib
 import random
@@ -168,9 +169,91 @@ def process_and_upload_dataset(url, dtype, names=None):
             zipf.extractall()
         visdrone2yolo(dir_name, names)
         upload_to_s3(dir_name, "dataset", zip_name="yolo.zip")
+        splits = ["test", "train", "valid"]
+        for split in splits:
+            yolo_to_coco(
+                dir_name / split / "images",
+                dir_name / split / "labels",
+                dir_name / split / "images/_annotations.coco.json",
+                names,
+            )
+            shutil.rmtree(dir_name / split / "labels")
+            for file_path in (dir_name / split / "images").glob("*"):
+                shutil.move(str(file_path), str(dir_name / split))
+            os.rmdir(dir_name / split / "images")
+        os.remove(dir_name / "data.yaml")
+        upload_to_s3(dir_name, "dataset", zip_name="coco.zip")
         os.remove("visdrone.zip")
         shutil.rmtree(dir_name)
         print("Done")
+
+
+def yolo_to_coco(image_dir, label_dir, output_path, categories):
+    coco_format = {
+        "images": [],
+        "annotations": [],
+        "categories": [{"id": i, "name": name} for i, name in enumerate(categories)],
+    }
+
+    # Initialize annotation id
+    ann_id = 0
+
+    # Loop through all images
+    for img_id, img_name in enumerate(tqdm(os.listdir(image_dir))):
+        if not img_name.endswith((".jpg", ".jpeg", ".png")):
+            continue
+
+        # Get image path
+        img_path = os.path.join(image_dir, img_name)
+
+        # Open image to get dimensions
+        img = Image.open(img_path)
+        width, height = img.size
+
+        # Add image info to COCO format
+        coco_format["images"].append(
+            {"id": img_id, "file_name": img_name, "width": width, "height": height}
+        )
+
+        # Get corresponding label file
+        label_name = os.path.splitext(img_name)[0] + ".txt"
+        label_path = os.path.join(label_dir, label_name)
+
+        if not os.path.exists(label_path):
+            continue
+
+        # Read YOLO annotations
+        with open(label_path, "r") as f:
+            label_lines = f.readlines()
+
+        # Convert YOLO annotations to COCO format
+        for line in label_lines:
+            class_id, x_center, y_center, bbox_width, bbox_height = map(
+                float, line.strip().split()
+            )
+
+            # Convert YOLO coordinates to COCO coordinates
+            x = (x_center - bbox_width / 2) * width
+            y = (y_center - bbox_height / 2) * height
+            w = bbox_width * width
+            h = bbox_height * height
+
+            # Add annotation to COCO format
+            coco_format["annotations"].append(
+                {
+                    "id": ann_id,
+                    "image_id": img_id,
+                    "category_id": int(class_id),
+                    "bbox": [x, y, w, h],
+                    "area": w * h,
+                    "iscrowd": 0,
+                }
+            )
+            ann_id += 1
+
+    # Save to JSON file
+    with open(output_path, "w") as f:
+        json.dump(coco_format, f, indent=2)
 
 
 def listen_to_sqs():
