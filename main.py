@@ -167,7 +167,7 @@ def process_and_upload_dataset(url, dtype, names=None):
             print(dir_name)
             zipf.extractall()
         visdrone2yolo(dir_name, names)
-        upload_to_s3(dir_name, "datasets", zip_name="yolo.zip")
+        upload_to_s3(dir_name, "dataset", zip_name="yolo.zip")
         os.remove("visdrone.zip")
         shutil.rmtree(dir_name)
         print("Done")
