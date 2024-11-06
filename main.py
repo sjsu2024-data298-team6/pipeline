@@ -149,9 +149,11 @@ def process_and_upload_dataset(url, dtype, names=None):
         print(f"{dtype} download type not supported")
 
     if dtype == TYPE_ROBOFLOW:
-        for dl_format in ROBOFLOW_SUPPORTED_DATASETS:
-            dataset_dir = download_dataset_from_roboflow(url, dl_format)
-            upload_to_s3(dataset_dir, "dataset", zip_name=f"{dl_format}.zip")
+        print(f"{dtype} support in progress")
+        return
+        # for dl_format in ROBOFLOW_SUPPORTED_DATASETS:
+        #     dataset_dir = download_dataset_from_roboflow(url, dl_format)
+        #     upload_to_s3(dataset_dir, "dataset", zip_name=f"{dl_format}.zip")
 
     elif dtype == TYPE_ZIPFILE:
         print(f"{dtype} support in progress")
