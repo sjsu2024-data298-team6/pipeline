@@ -2,7 +2,6 @@ from PIL import Image
 from dotenv import load_dotenv
 from pathlib import Path
 from roboflow import Roboflow
-from tqdm import tqdm
 import ast
 import boto3
 import json
@@ -16,6 +15,7 @@ import torchvision.transforms as transforms
 import wget
 import yaml
 import zipfile
+import time
 
 # ---------------
 
@@ -43,6 +43,11 @@ ROBOFLOW_SUPPORTED_DATASETS = {ROBOFLOW_YOLOV11, ROBOFLOW_YOLOV8, ROBOFLOW_DETEC
 # ---------------
 
 
+def print_timestamp(*args, **kwargs):
+    print(f"[{time.strftime('%Y-%m-%dT%H:%M:%S', time.gmtime()):^25}]", end=" ")
+    print(*args, **kwargs)
+
+
 def convert_box_to_yolo(size, box):
     dw = 1.0 / size[0]
     dh = 1.0 / size[1]
@@ -56,8 +61,7 @@ def convert_box_to_yolo(size, box):
 
 def visdrone2yolo(dir: Path, names):
     (dir / "labels").mkdir(parents=True, exist_ok=True)  # make labels directory
-    pbar = tqdm((dir / "annotations").glob("*.txt"), desc=f"Converting {dir}")
-    for f in pbar:
+    for f in (dir / "annotations").glob("*.txt"):
         img_size = Image.open((dir / "images" / f.name).with_suffix(".jpg")).size
         lines = []
         with open(f, "r") as file:  # read annotation.txt
@@ -88,8 +92,7 @@ def visdrone2yolo(dir: Path, names):
 
     counts = {"test": 0, "train": 0, "valid": 0}
     max_counts = {"test": test_len, "train": train_len, "valid": val_len}
-    pbar = tqdm((dir / "labels").glob("*.txt"), desc=f"Performing data split")
-    for f in pbar:
+    for f in (dir / "labels").glob("*.txt"):
         i = (dir / "images" / f.name).with_suffix(".jpg")
         split = random.choice(splits)
         shutil.move(f, dir / split / "labels")
@@ -133,45 +136,48 @@ def upload_to_s3(local_path, s3_path, zip_name="upload.zip"):
             for file in files:
                 file_path = os.path.join(root, file)
                 zipf.write(file_path, os.path.relpath(file_path, local_path))
-    print(f"Zipped {local_path} to {zip_path}")
+    print_timestamp(f"Zipped {local_path} to {zip_path}")
 
     if DEPLOYMENT == "dev":
-        print("Not uploading in dev env")
+        print_timestamp("Not uploading in dev env")
         return
     s3_key = os.path.join(s3_path, zip_name)
 
     s3.upload_file(zip_path, S3_BUCKET_NAME, s3_key)
-    print(f"Uploaded {zip_path} to s3://{S3_BUCKET_NAME}/{s3_key}")
+    print_timestamp(f"Uploaded {zip_path} to s3://{S3_BUCKET_NAME}/{s3_key}")
 
 
 def process_and_upload_dataset(url, dtype, names=None):
     if dtype not in input_types:
-        print(f"{dtype} download type not supported")
+        print_timestamp(f"{dtype} download type not supported")
 
     if dtype == TYPE_ROBOFLOW:
-        print(f"{dtype} support in progress")
+        print_timestamp(f"{dtype} support in progress")
         return
         # for dl_format in ROBOFLOW_SUPPORTED_DATASETS:
         #     dataset_dir = download_dataset_from_roboflow(url, dl_format)
         #     upload_to_s3(dataset_dir, "dataset", zip_name=f"{dl_format}.zip")
 
     elif dtype == TYPE_ZIPFILE:
-        print(f"{dtype} support in progress")
+        print_timestamp(f"{dtype} support in progress")
         return
 
     elif dtype == TYPE_VISDRONE:
         if names is None:
-            print("Names are required for visdrone")
+            print_timestamp("Names are required for visdrone")
             return
-        wget.download(url=url, out="visdrone.zip")
+        print_timestamp("Downloading original dataset")
+        wget.download(url=url, out="visdrone.zip", bar=None)
         with zipfile.ZipFile("visdrone.zip", "r") as zipf:
             dir_name = Path("./" + zipf.namelist()[0])
-            print(os.listdir("./"))
-            print(dir_name)
+            print_timestamp()
+            print_timestamp("Unzipped to ", dir_name)
             zipf.extractall()
+        print_timestamp("Converting to YOLO format")
         visdrone2yolo(dir_name, names)
         upload_to_s3(dir_name, "dataset", zip_name="yolo.zip")
         splits = ["test", "train", "valid"]
+        print_timestamp("Converting to COCO format")
         for split in splits:
             yolo_to_coco(
                 dir_name / split / "images",
@@ -187,7 +193,7 @@ def process_and_upload_dataset(url, dtype, names=None):
         upload_to_s3(dir_name, "dataset", zip_name="coco.zip")
         os.remove("visdrone.zip")
         shutil.rmtree(dir_name)
-        print("Done")
+        print_timestamp("Done")
 
 
 def yolo_to_coco(image_dir, label_dir, output_path, categories):
@@ -201,7 +207,7 @@ def yolo_to_coco(image_dir, label_dir, output_path, categories):
     ann_id = 0
 
     # Loop through all images
-    for img_id, img_name in enumerate(tqdm(os.listdir(image_dir))):
+    for img_id, img_name in enumerate(os.listdir(image_dir)):
         if not img_name.endswith((".jpg", ".jpeg", ".png")):
             continue
 
@@ -280,12 +286,12 @@ def listen_to_sqs():
 
                 # Delete message after successful processing
                 sqs.delete_message(QueueUrl=SQS_QUEUE_URL, ReceiptHandle=receipt_handle)
-                print("Processed and deleted message from SQS.")
+                print_timestamp("Processed and deleted message from SQS.")
 
             except Exception as e:
-                print(f"Error processing message: {e}")
+                print_timestamp(f"Error processing message: {e}")
         else:
-            print("No messages in queue. Waiting...")
+            print_timestamp("No messages in queue. Waiting...")
         time.sleep(5)  # Poll every 5 seconds
 
 
