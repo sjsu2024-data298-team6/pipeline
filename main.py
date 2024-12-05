@@ -27,6 +27,7 @@ s3 = boto3.client("s3")
 ROBOFLOW_KEY = os.getenv("ROBOFLOW_KEY")
 SQS_QUEUE_URL = os.getenv("SQS_QUEUE_URL")
 S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME")
+SNS_ARN = os.getenv("SNS_ARN")
 DEPLOYMENT = os.getenv("DEPLOYMENT")
 
 TYPE_ROBOFLOW = ("roboflow",)
@@ -196,6 +197,71 @@ def process_and_upload_dataset(url, dtype, names=None):
         print_timestamp("Done")
 
 
+def trigger_training(model):
+    ec2 = boto3.client("ec2", region_name="us-east-1")
+
+    # Define User Data script
+    user_data_script = f"""#!/bin/bash
+sudo apt update -y
+sudo apt upgrade -y
+sudo apt install python3 git pip3 python-is-python3 -y
+git clone https://github.com/sjsu2024-data298-team6/trainer ./trainer
+cd ./trainer
+echo "DEPLOYMENT=prod\nS3_BUCKET_NAME={S3_BUCKET_NAME}\nSNS_ARN={SNS_ARN}\nMODEL_TO_TRAIN={model}" .env
+pip install -r requirements.txt
+python3 main.py
+sudo shutdown -h now
+    """
+
+    # Launch EC2 instance
+    response = ec2.run_instances(
+        ImageId="ami-0866a3c8686eaeeba",
+        InstanceType="t2.micro",
+        InstanceInitiatedShutdownBehavior="terminate",
+        KeyName="sjsu-fall24-data298-team6-key-pair",
+        MinCount=1,
+        MaxCount=1,
+        UserData=user_data_script,
+        BlockDeviceMappings=[
+            {
+                "DeviceName": "/dev/sda1",
+                "Ebs": {
+                    "Encrypted": False,
+                    "DeleteOnTermination": True,
+                    "Iops": 3000,
+                    "SnapshotId": "snap-021176b1e05cb6895",
+                    "VolumeSize": 8,
+                    "VolumeType": "gp3",
+                    "Throughput": 125,
+                },
+            }
+        ],
+        NetworkInterfaces=[
+            {
+                "AssociatePublicIpAddress": True,
+                "DeviceIndex": 0,
+                "Groups": [
+                    "sg-0ae6a08ce3772678c",
+                ],
+            },
+        ],
+        TagSpecifications=[
+            {
+                "ResourceType": "instance",
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": f"sfdt-trainer-{model}",
+                    },
+                ],
+            },
+        ],
+    )
+
+    instance_id = response["Instances"][0]["InstanceId"]
+    print_timestamp(f"Trainer EC2 instance launched: {instance_id}")
+
+
 def yolo_to_coco(image_dir, label_dir, output_path, categories):
     coco_format = {
         "images": [],
@@ -278,11 +344,13 @@ def listen_to_sqs():
             body = ast.literal_eval(message["Body"])
             url = body["url"]
             dtype = body["dtype"]
+            model = body["model"]
             names = ast.literal_eval(body["names"]) if body["names"] != "none" else None
 
             try:
                 # Process the dataset
                 process_and_upload_dataset(url=url, dtype=dtype, names=names)
+                trigger_training(model)
 
                 # Delete message after successful processing
                 sqs.delete_message(QueueUrl=SQS_QUEUE_URL, ReceiptHandle=receipt_handle)
@@ -313,5 +381,6 @@ if __name__ == "__main__":
                 "motor",
             ],
         )
+        trigger_training("yolo")
     else:
         listen_to_sqs()
