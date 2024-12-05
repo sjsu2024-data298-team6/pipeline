@@ -204,10 +204,12 @@ def trigger_training(model):
     user_data_script = f"""#!/bin/bash
 sudo apt update -y
 sudo apt upgrade -y
-sudo apt install python3 git pip3 python-is-python3 -y
-git clone https://github.com/sjsu2024-data298-team6/trainer ./trainer
-cd ./trainer
-echo "DEPLOYMENT=prod\nS3_BUCKET_NAME={S3_BUCKET_NAME}\nSNS_ARN={SNS_ARN}\nMODEL_TO_TRAIN={model}" .env
+sudo apt install python3-full python3-pip git -y
+git clone https://github.com/sjsu2024-data298-team6/trainer /home/ubuntu/trainer
+cd /home/ubuntu/trainer
+echo "DEPLOYMENT=prod\nS3_BUCKET_NAME={S3_BUCKET_NAME}\nSNS_ARN={SNS_ARN}\nMODEL_TO_TRAIN={model}" >> .env
+python3 -m venv venv
+source venv/bin/activate
 pip install -r requirements.txt
 python3 main.py
 sudo shutdown -h now
