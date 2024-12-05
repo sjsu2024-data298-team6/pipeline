@@ -18,6 +18,7 @@ def lambda_handler(event, context):
     names = event.get("queryStringParameters", {}).get("names")
     names = names.split(",")
     names = json.dumps(names)
+    model = event.get("queryStringParameters", {}).get("model")
 
     if not url:
         return {
@@ -34,6 +35,7 @@ def lambda_handler(event, context):
                     "url": url,
                     "dtype": dtype,
                     "names": names,
+                    "model": model,
                 }
             ),
         )
