@@ -232,7 +232,7 @@ sudo shutdown -h now
                     "DeleteOnTermination": True,
                     "Iops": 3000,
                     "SnapshotId": "snap-021176b1e05cb6895",
-                    "VolumeSize": 8,
+                    "VolumeSize": 30,
                     "VolumeType": "gp3",
                     "Throughput": 125,
                 },
