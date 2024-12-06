@@ -224,6 +224,9 @@ sudo shutdown -h now
         MinCount=1,
         MaxCount=1,
         UserData=user_data_script,
+        IamInstanceProfile={
+            "Arn": os.getenv("EC2_INSTANCE_IAM_ARM"),
+        },
         BlockDeviceMappings=[
             {
                 "DeviceName": "/dev/sda1",
