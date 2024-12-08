@@ -238,8 +238,8 @@ sudo shutdown -h now
 
     # Launch EC2 instance
     response = ec2.run_instances(
-        ImageId="ami-0866a3c8686eaeeba",
-        InstanceType="t2.micro",
+        ImageId="ami-0e2c8caa4b6378d8c",
+        InstanceType="g5.2xlarge",
         InstanceInitiatedShutdownBehavior="terminate",
         KeyName="sjsu-fall24-data298-team6-key-pair",
         MinCount=1,
@@ -255,7 +255,7 @@ sudo shutdown -h now
                     "Encrypted": False,
                     "DeleteOnTermination": True,
                     "Iops": 3000,
-                    "SnapshotId": "snap-021176b1e05cb6895",
+                    "SnapshotId": "snap-0ea137085731e5c98",
                     "VolumeSize": 30,
                     "VolumeType": "gp3",
                     "Throughput": 125,
