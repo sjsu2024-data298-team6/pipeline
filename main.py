@@ -228,7 +228,7 @@ sudo apt install python3-full python3-pip git libgl1 -y
 git clone https://github.com/sjsu2024-data298-team6/trainer /home/ubuntu/trainer
 cd /home/ubuntu/trainer
 echo "DEPLOYMENT=prod\nS3_BUCKET_NAME={S3_BUCKET_NAME}\nSNS_ARN={SNS_ARN}\nMODEL_TO_TRAIN={model}" >> .env
-echo "{json.dumps(params)}" >> params.json
+echo '{json.dumps(params)}' >> params.json
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
