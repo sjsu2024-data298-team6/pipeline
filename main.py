@@ -373,13 +373,13 @@ def listen_to_sqs():
             names = ast.literal_eval(body["names"]) if body["names"] != "none" else None
 
             try:
+                # Delete message early to avoid over run model training
+                sqs.delete_message(QueueUrl=SQS_QUEUE_URL, ReceiptHandle=receipt_handle)
+                print_timestamp("Processed and deleted message from SQS.")
+
                 # Process the dataset
                 process_and_upload_dataset(url=url, dtype=dtype, names=names)
                 trigger_training(model)
-
-                # Delete message after successful processing
-                sqs.delete_message(QueueUrl=SQS_QUEUE_URL, ReceiptHandle=receipt_handle)
-                print_timestamp("Processed and deleted message from SQS.")
 
             except Exception as e:
                 print_timestamp(f"Error processing message: {e}")
