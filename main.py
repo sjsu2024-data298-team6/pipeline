@@ -23,6 +23,7 @@ load_dotenv()
 
 sqs = boto3.client("sqs", region_name="us-east-1")
 s3 = boto3.client("s3")
+sns = boto3.client("sns", region_name="us-east-1")
 
 ROBOFLOW_KEY = os.getenv("ROBOFLOW_KEY")
 SQS_QUEUE_URL = os.getenv("SQS_QUEUE_URL")
@@ -42,6 +43,19 @@ ROBOFLOW_DETECTRON = "coco"
 ROBOFLOW_SUPPORTED_DATASETS = {ROBOFLOW_YOLOV11, ROBOFLOW_YOLOV8, ROBOFLOW_DETECTRON}
 
 # ---------------
+
+
+def send_sns(subject, message):
+    try:
+        sns.publish(
+            TargetArn=SNS_ARN,
+            Message=message,
+            Subject=subject,
+        )
+
+    except Exception as e:
+        print("Failed to send message")
+        pass
 
 
 def print_timestamp(*args, **kwargs):
@@ -195,6 +209,13 @@ def process_and_upload_dataset(url, dtype, names=None):
         os.remove("visdrone.zip")
         shutil.rmtree(dir_name)
         print_timestamp("Done")
+        send_sns(
+            "Converted dataset",
+            f"""Converted dataset from {url}
+timestamp: {time.time()}
+datasets location: {S3_BUCKET_NAME}/datasets/
+                 """,
+        )
 
 
 def trigger_training(model):
