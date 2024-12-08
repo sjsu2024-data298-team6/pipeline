@@ -213,8 +213,7 @@ def process_and_upload_dataset(url, dtype, names=None):
             "Converted dataset",
             f"""Converted dataset from {url}
 timestamp: {time.time()}
-datasets location: {S3_BUCKET_NAME}/datasets/
-                 """,
+datasets location: {S3_BUCKET_NAME}/datasets/""",
         )
 
 
