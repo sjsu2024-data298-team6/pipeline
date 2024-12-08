@@ -224,7 +224,7 @@ def trigger_training(model, params):
     user_data_script = f"""#!/bin/bash
 sudo apt update -y
 sudo apt upgrade -y
-sudo apt install python3-full python3-pip git -y
+sudo apt install python3-full python3-pip git libgl1 -y
 git clone https://github.com/sjsu2024-data298-team6/trainer /home/ubuntu/trainer
 cd /home/ubuntu/trainer
 echo "DEPLOYMENT=prod\nS3_BUCKET_NAME={S3_BUCKET_NAME}\nSNS_ARN={SNS_ARN}\nMODEL_TO_TRAIN={model}" >> .env
