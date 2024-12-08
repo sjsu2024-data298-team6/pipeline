@@ -217,7 +217,7 @@ datasets location: {S3_BUCKET_NAME}/datasets/""",
         )
 
 
-def trigger_training(model):
+def trigger_training(model, params):
     ec2 = boto3.client("ec2", region_name="us-east-1")
 
     # Define User Data script
@@ -228,6 +228,7 @@ sudo apt install python3-full python3-pip git -y
 git clone https://github.com/sjsu2024-data298-team6/trainer /home/ubuntu/trainer
 cd /home/ubuntu/trainer
 echo "DEPLOYMENT=prod\nS3_BUCKET_NAME={S3_BUCKET_NAME}\nSNS_ARN={SNS_ARN}\nMODEL_TO_TRAIN={model}" >> .env
+echo "{json.dumps(params)}" >> params.json
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
@@ -367,22 +368,32 @@ def listen_to_sqs():
             message = response["Messages"][0]
             receipt_handle = message["ReceiptHandle"]
             body = ast.literal_eval(message["Body"])
-            url = body["url"]
-            dtype = body["dtype"]
-            model = body["model"]
-            names = ast.literal_eval(body["names"]) if body["names"] != "none" else None
-
             try:
+                url = body["url"]
+                dtype = body["dtype"]
+                model = body["model"]
+                params = body["params"]
+                names = (
+                    ast.literal_eval(body["names"]) if body["names"] != "none" else None
+                )
+
                 # Delete message early to avoid over run model training
                 sqs.delete_message(QueueUrl=SQS_QUEUE_URL, ReceiptHandle=receipt_handle)
                 print_timestamp("Processed and deleted message from SQS.")
 
                 # Process the dataset
                 process_and_upload_dataset(url=url, dtype=dtype, names=names)
-                trigger_training(model)
+                trigger_training(model, params)
 
             except Exception as e:
                 print_timestamp(f"Error processing message: {e}")
+                send_sns(
+                    "Error | reading request",
+                    f"""Project: pipeline
+                         Error: {e}""",
+                )
+                sqs.delete_message(QueueUrl=SQS_QUEUE_URL, ReceiptHandle=receipt_handle)
+                print_timestamp("Deleted message from SQS with errors")
         else:
             print_timestamp("No messages in queue. Waiting...")
         time.sleep(5)  # Poll every 5 seconds
@@ -406,6 +417,6 @@ if __name__ == "__main__":
                 "motor",
             ],
         )
-        trigger_training("yolo")
+        trigger_training("yolo", {"epochs": 1})
     else:
         listen_to_sqs()
